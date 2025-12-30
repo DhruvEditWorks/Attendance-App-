@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Attendance App</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @keyframes scan { 0% { top: 0%; } 50% { top: 100%; } 100% { top: 0%; } }
+        .scan-line { animation: scan 2s infinite linear; }
+        .hidden { display: none !important; }
+        video { transform: scaleX(-1); } 
+        #video-scan { transform: none; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800 min-h-screen">
+
+    <!-- CAMERA ERROR MODAL -->
+    <div id="camera-error" class="hidden fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-6 text-white text-center">
+        <div>
+            <i data-lucide="camera-off" class="w-16 h-16 mx-auto text-red-500 mb-4"></i>
+            <h2 class="text-2xl font-bold mb-2">Camera Error!</h2>
+            <p id="error-msg" class="text-gray-300 mb-6">Permission denied.</p>
+            <div class="bg-gray-800 p-4 rounded text-left text-sm font-mono text-yellow-400 mb-6">
+                TIP: Camera only works on HTTPS sites.<br>
+                Do not open as a local file (file://).<br>
+                Upload this HTML to Netlify/GitHub Pages.
+            </div>
+            <button onclick="location.reload()" class="bg-blue-600 px-6 py-2 rounded font-bold">Try Again</button>
+        </div>
+    </div>
+
+    <!-- APP CONTAINER -->
+    <div id="app" class="max-w-md mx-auto bg-white min-h-screen shadow-2xl relative overflow-hidden">
+        
+        <!-- 1. HOME VIEW -->
+        <div id="view-home" class="view h-full flex flex-col">
+            <div class="bg-blue-800 p-8 text-white text-center rounded-b-3xl shadow-lg z-10">
+                <h1 class="text-3xl font-bold mb-1">Smart Attendance</h1>
+                <p class="text-blue-200 text-sm">Site: Construction Block A</p>
+            </div>
+            
+            <div class="p-6 space-y-4 flex-1 flex flex-col justify-center">
+                <button onclick="goToView('worker-select')" class="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all text-white p-6 rounded-xl shadow-lg group flex items-center justify-between">
+                    <div class="flex flex-col text-left">
+                        <span class="text-xl font-bold">Mark Attendance</span>
+                        <span class="text-blue-100 text-sm">Scan QR → Selfie → Upload</span>
+                    </div>
+                    <i data-lucide="qr-code" class="w-10 h-10"></i>
+                </button>
+
+                <button onclick="goToView('admin-login')" class="w-full bg-white border-2 border-gray-200 text-gray-600 p-4 rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50 font-semibold">
+                    <i data-lucide="lock" class="w-5 h-5"></i> Admin Console
+                </button>
+            </div>
+
+            <div class="bg-gray-50 p-4 text-center border-t">
+                <span id="drive-status" class="text-xs font-bold px-2 py-1 rounded bg-red-100 text-red-700">● Drive Not Linked</span>
+            </div>
+        </div>
+
+        <!-- 2. WORKER SELECT -->
+        <div id="view-worker-select" class="view hidden h-full flex flex-col bg-gray-50">
+            <div class="p-4 bg-blue-600 text-white flex justify-between items-center shadow-md">
+                <h2 class="font-bold text-lg">Select Your Name</h2>
+                <button onclick="goToView('home')"><i data-lucide="x"></i></button>
+            </div>
+            <div id="worker-list" class="overflow-y-auto p-2 space-y-2 flex-1"></div>
+        </div>
+
+        <!-- 3. SCAN VIEW -->
+        <div id="view-scan" class="view hidden h-screen bg-black relative flex flex-col items-center justify-center">
+            <video id="video-scan" class="absolute inset-0 w-full h-full object-cover opacity-60" autoplay playsinline></video>
+            <button onclick="stopCamera(); goToView('home')" class="absolute top-4 right-4 text-white z-20 bg-black/50 rounded-full p-2"><i data-lucide="x"></i></button>
+            
+            <div class="z-10 relative flex flex-col items-center w-full px-8">
+                <div id="scan-frame" class="w-72 h-72 border-4 border-white rounded-2xl flex items-center justify-center relative shadow-[0_0_100px_rgba(0,0,0,0.5)]">
+                    <div id="scan-laser" class="absolute w-full h-1 bg-red-500 shadow-[0_0_10px_red] scan-line"></div>
+                </div>
+                <p id="scan-msg" class="mt-8 text-white font-bold bg-black/70 px-6 py-3 rounded-full text-center backdrop-blur-sm shadow-lg border border-white/20">Align Official QR Code...</p>
+                <button onclick="simulateScan()" class="mt-8 text-xs text-gray-400 underline opacity-50 hover:opacity-100">[Dev: Simulate Scan]</button>
+            </div>
+        </div>
+
+        <!-- 4. CAPTURE VIEW -->
+        <div id="view-capture" class="view hidden h-screen bg-black flex flex-col relative">
+            <video id="video-selfie" class="flex-1 object-cover" autoplay playsinline></video>
+            <canvas id="canvas-capture" class="hidden"></canvas>
+            <div class="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 to-transparent text-white text-center"><p class="font-bold text-lg">Selfie Verification</p></div>
+            <div class="h-32 bg-black flex items-center justify-center pb-4 z-20">
+                <button onclick="capturePhoto()" class="w-20 h-20 bg-white rounded-full border-4 border-gray-300 active:scale-90 transition-transform shadow-[0_0_20px_rgba(255,255,255,0.5)]"></button>
+            </div>
+        </div>
+
+        <!-- 5. FORM VIEW -->
+        <div id="view-form" class="view hidden h-full flex flex-col bg-gray-100 p-6 justify-center">
+            <div class="bg-white p-6 rounded-xl shadow-xl w-full">
+                <h2 class="text-xl font-bold mb-4">Confirm Details</h2>
+                <div class="relative w-full h-48 bg-gray-200 rounded-lg mb-4 overflow-hidden border border-gray-300">
+                    <img id="preview-image" class="w-full h-full object-cover transform scale-x-[-1]" src="" alt="Selfie">
+                </div>
+                <div class="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-100">
+                    <p class="text-xs text-gray-500 uppercase font-bold">Employee</p>
+                    <p id="confirm-name" class="text-lg font-bold text-blue-900">--</p>
+                    <p class="text-xs text-gray-500 uppercase font-bold mt-2">Salary</p>
+                    <p id="confirm-salary" class="text-lg font-bold text-green-600">₹--</p>
+                </div>
+                <div class="mb-4"><label class="text-xs text-gray-500 uppercase font-bold">Notes (Optional)</label><input type="text" id="attendance-notes" class="w-full p-2 border rounded mt-1" placeholder="Any remarks..."></div>
+                <button onclick="submitAttendance()" class="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg"><i data-lucide="cloud-upload"></i> Submit Attendance</button>
+            </div>
+        </div>
+
+        <!-- 6. LOADING VIEW -->
+        <div id="view-status" class="view hidden h-full flex flex-col items-center justify-center text-white bg-blue-600">
+            <div id="status-icon" class="mb-6"></div>
+            <h2 id="status-title" class="text-3xl font-bold">Processing...</h2>
+            <p id="status-desc" class="mt-2 text-blue-100">Please wait</p>
+        </div>
+
+        <!-- 7. ADMIN LOGIN -->
+        <div id="view-admin-login" class="view hidden h-full flex flex-col items-center justify-center bg-gray-900 p-6">
+            <div class="bg-white p-8 rounded-xl w-full shadow-2xl">
+                <h2 class="text-2xl font-bold mb-6 text-center">Admin Access</h2>
+                <input type="password" id="admin-pin" placeholder="PIN (1234)" class="w-full p-4 border rounded-lg text-center text-2xl tracking-widest mb-4 outline-none">
+                <button onclick="checkAdminLogin()" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">Unlock</button>
+                <button onclick="goToView('home')" class="w-full mt-4 text-gray-500 text-sm hover:underline text-center">Back to Home</button>
+            </div>
+        </div>
+
+        <!-- 8. ADMIN PANEL -->
+        <div id="view-admin-panel" class="view hidden h-full flex flex-col bg-gray-50 overflow-y-auto">
+            <div class="bg-white p-4 shadow-sm flex justify-between items-center sticky top-0 z-20">
+                <h1 class="text-xl font-bold text-gray-800">Admin Dashboard</h1>
+                <button onclick="goToView('home')" class="text-red-500 font-bold border px-3 py-1 rounded text-sm hover:bg-red-50">Log Out</button>
+            </div>
+            <div class="p-6 space-y-6">
+                <!-- Reports -->
+                <div class="bg-indigo-900 text-white p-6 rounded-xl shadow-lg flex justify-between items-center">
+                    <div><h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="cloud"></i> Reports</h2><p class="text-indigo-200 text-xs">Live data from Drive</p></div>
+                    <button onclick="goToView('admin-report')" class="bg-white text-indigo-900 px-4 py-2 rounded-lg font-bold text-sm shadow hover:bg-gray-100">Open Report</button>
+                </div>
+                <!-- Advance -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-orange-200">
+                    <div class="flex items-center gap-2 mb-4 text-orange-700 border-b border-orange-100 pb-2"><i data-lucide="wallet"></i> <h2 class="font-bold">Add Payment / Advance</h2></div>
+                    <div class="space-y-3"><select id="adv-worker-select" class="w-full p-3 border rounded-lg bg-gray-50"></select><input type="number" id="adv-amount" class="w-full p-3 border rounded-lg font-bold" placeholder="Amount (₹)"><button onclick="submitAdvance()" id="btn-advance" class="w-full bg-orange-600 text-white py-3 rounded-lg font-bold hover:bg-orange-700 flex justify-center items-center gap-2"><i data-lucide="save"></i> Add Entry</button></div>
+                </div>
+                <!-- Drive -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex items-center gap-2 mb-4 text-green-700 border-b pb-2"><i data-lucide="link"></i> <h2 class="font-bold">Drive Setup</h2></div>
+                    <div class="flex gap-2"><input type="text" id="script-url-input" placeholder="Paste Script URL here..." class="flex-1 p-2 border rounded text-xs font-mono"><button onclick="saveScriptUrl()" class="bg-green-600 text-white px-3 rounded hover:bg-green-700"><i data-lucide="save"></i></button></div>
+                </div>
+                <!-- QR -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="font-bold mb-4 flex items-center gap-2"><i data-lucide="qr-code"></i> Official QR</h2>
+                    <div class="flex items-center gap-4">
+                        <div class="bg-white p-2 border rounded shadow-sm"><img id="admin-qr-img" src="" alt="QR" class="w-24 h-24"></div>
+                        <div><p id="admin-qr-code-text" class="text-xs text-gray-500 font-mono break-all mb-2">--</p><button onclick="printQr()" class="bg-gray-800 text-white px-3 py-2 rounded text-xs hover:bg-black flex items-center gap-2"><i data-lucide="printer"></i> Print PDF</button></div>
+                    </div>
+                </div>
+                <!-- Workers -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex justify-between items-center mb-4 border-b pb-2"><h2 class="font-bold flex items-center gap-2 text-blue-800"><i data-lucide="users"></i> Workers</h2><button onclick="showAddModal()" class="bg-blue-600 text-white px-3 py-1 rounded text-xs font-bold">+ Add</button></div>
+                    <div id="admin-worker-list" class="space-y-2 max-h-60 overflow-y-auto"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 9. REPORT VIEW -->
+        <div id="view-admin-report" class="view hidden h-full flex flex-col bg-gray-50">
+            <div class="bg-gray-800 text-white p-4 flex justify-between items-center shadow-lg">
+                <div><h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="file-text"></i> Reports</h2><p class="text-xs text-gray-400">Live Drive Data</p></div>
+                <button onclick="goToView('admin-panel')" class="text-sm bg-gray-700 px-3 py-1 rounded">Close</button>
+            </div>
+            <div class="p-4 space-y-4 flex-1 overflow-y-auto">
+                <div class="flex gap-2"><button onclick="fetchDriveReport()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm flex-1 flex justify-center items-center gap-2"><i data-lucide="refresh-cw"></i> Fetch Data</button><select id="report-worker-select" class="flex-1 border rounded-lg p-2 text-sm" onchange="renderReport()"><option value="">Select Employee</option></select></div>
+                <div id="report-content" class="hidden space-y-6">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-blue-50 p-3 rounded-lg border border-blue-100"><p class="text-xs text-blue-500 font-bold uppercase">Present</p><p id="rep-present" class="text-xl font-bold text-blue-800">0</p></div>
+                        <div class="bg-orange-50 p-3 rounded-lg border border-orange-100"><p class="text-xs text-orange-500 font-bold uppercase">Advance</p><p id="rep-advance" class="text-xl font-bold text-orange-800">₹0</p></div>
+                    </div>
+                    <div><h3 class="font-bold text-gray-700 mb-2 text-sm">Advance History</h3><div class="bg-white border rounded-lg overflow-hidden"><table class="w-full text-xs text-left"><thead class="bg-gray-100"><tr><th class="p-2">Date</th><th class="p-2">Amount</th></tr></thead><tbody id="rep-adv-list"></tbody></table></div></div>
+                    <div><h3 class="font-bold text-gray-700 mb-2 text-sm">Attendance Photos</h3><div id="rep-photo-grid" class="grid grid-cols-2 gap-3"></div></div>
+                </div>
+                <div id="report-loading" class="hidden text-center py-10 text-gray-500">Fetching data...</div>
+                <div id="report-empty" class="text-center py-10 text-gray-400">Fetch data and select an employee.</div>
+            </div>
+        </div>
+
+        <!-- MODAL -->
+        <div id="modal-add-worker" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl w-full max-w-sm overflow-hidden shadow-2xl">
+                <div class="bg-blue-600 p-4 text-white flex justify-between items-center"><h3 class="font-bold">Add New Employee</h3><button onclick="hideAddModal()"><i data-lucide="x"></i></button></div>
+                <div class="p-6 space-y-4"><input type="text" id="new-name" class="w-full p-3 border rounded-lg" placeholder="Name"><input type="number" id="new-phone" class="w-full p-3 border rounded-lg" placeholder="Phone"><input type="number" id="new-salary" class="w-full p-3 border rounded-lg" placeholder="Salary (₹)"><button onclick="addWorker()" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold shadow-lg">Save Employee</button></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DEFAULT_QR = "SA_STRICT_V1_SITE_DEFAULT";
+        let state = { view: 'home', workers: [], qrCode: DEFAULT_QR, scriptUrl: '', selectedWorker: null, capturedPhoto: null, driveData: [], scanInterval: null, isProcessing: false };
+
+        window.onload = () => {
+            loadState();
+            lucide.createIcons();
+            renderWorkers();
+        };
+
+        function loadState() {
+            state.workers = JSON.parse(localStorage.getItem('site_workers')) || [
+                { id: 'E001', name: 'Ramesh Kumar', phone: '9876543210', salary: '15000' },
+                { id: 'E002', name: 'Suresh Singh', phone: '9123456789', salary: '18000' }
+            ];
+            state.qrCode = localStorage.getItem('official_qr_code') || DEFAULT_QR;
+            state.scriptUrl = localStorage.getItem('google_script_url') || '';
+            updateDriveStatus();
+            document.getElementById('script-url-input').value = state.scriptUrl;
+            document.getElementById('admin-qr-code-text').textContent = state.qrCode;
+            updateQrImage();
+        }
+
+        function saveWorkers() { localStorage.setItem('site_workers', JSON.stringify(state.workers)); renderWorkers(); }
+
+        function goToView(name) {
+            stopCamera();
+            document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+            document.getElementById(`view-${name}`).classList.remove('hidden');
+            if(name === 'scan') startCamera('environment');
+            if(name === 'capture') startCamera('user');
+            if(name === 'home') updateDriveStatus();
+            lucide.createIcons();
+        }
+
+        function updateDriveStatus() {
+            const el = document.getElementById('drive-status');
+            if(state.scriptUrl) { el.className = "text-xs font-bold px-2 py-1 rounded bg-green-100 text-green-700"; el.innerText = "● Drive Linked"; } 
+            else { el.className = "text-xs font-bold px-2 py-1 rounded bg-red-100 text-red-700"; el.innerText = "● Drive Not Linked"; }
+        }
+
+        function renderWorkers() {
+            document.getElementById('worker-list').innerHTML = state.workers.map(w => `
+                <button onclick="selectWorker('${w.id}')" class="w-full p-4 bg-white border-b border-gray-200 hover:bg-blue-50 flex items-center gap-4 text-left rounded-lg shadow-sm">
+                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-lg">${w.name.charAt(0)}</div>
+                    <div><p class="font-bold text-lg text-gray-800">${w.name}</p><p class="text-sm text-gray-500">ID: ${w.id}</p></div>
+                </button>`).join('');
+            
+            document.getElementById('admin-worker-list').innerHTML = state.workers.map(w => `
+                <div class="flex justify-between items-center bg-gray-50 p-3 rounded border">
+                    <div><p class="font-bold text-sm">${w.name}</p><p class="text-xs text-green-600 font-bold">₹${w.salary}</p></div>
+                    <button onclick="deleteWorker('${w.id}')" class="text-red-500 p-2 hover:bg-red-100 rounded"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </div>`).join('');
+            
+            const opts = `<option value="">Select Employee</option>` + state.workers.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+            document.getElementById('adv-worker-select').innerHTML = opts;
+            document.getElementById('report-worker-select').innerHTML = opts;
+            lucide.createIcons();
+        }
+
+        function selectWorker(id) { state.selectedWorker = state.workers.find(w => w.id === id); goToView('scan'); }
+
+        async function startCamera(mode) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode } });
+                const video = mode === 'environment' ? document.getElementById('video-scan') : document.getElementById('video-selfie');
+                video.srcObject = stream;
+                if(mode === 'environment') startScanning();
+            } catch (err) {
+                // IMPORTANT: SHOW ERROR MODAL
+                document.getElementById('error-msg').innerText = err.message + " (Check HTTPS)";
+               
